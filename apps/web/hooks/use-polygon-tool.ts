@@ -301,7 +301,7 @@ export function usePolygonTool(): PolygonToolState & PolygonToolActions {
 
     startDraftShape()
     setImportText("")
-    toast.message("Started a new polygon. Click the map to add points.")
+    toast.message("Started a new polygon. Right-click the map to add points.")
   }, [activeShape, startDraftShape])
 
   const selectShape = useCallback(

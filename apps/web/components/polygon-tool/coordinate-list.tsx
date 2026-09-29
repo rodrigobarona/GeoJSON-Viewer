@@ -21,8 +21,9 @@ export function CoordinateList({
   if (isEmpty) {
     return (
       <p className="text-muted-foreground text-sm leading-relaxed">
-        Click the map to draw a polygon, or use Import to add one. After closing
-        a shape, click New to start another polygon.
+        Right-click to add points (tap on mobile). Drag vertices to move them.
+        On mobile, use two fingers to pan the map. Use New to start another
+        polygon.
       </p>
     )
   }

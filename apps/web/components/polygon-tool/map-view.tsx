@@ -1,13 +1,15 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, type RefObject } from "react"
 import {
   GeoJSONSource,
   Map,
   NavigationControl,
-  type GeoJSONFeature,
+  type MapGeoJSONFeature,
   type MapLayerMouseEvent,
+  type MapLayerTouchEvent,
   type MapMouseEvent,
+  type MapTouchEvent,
   type StyleSpecification,
 } from "maplibre-gl"
 import "maplibre-gl/dist/maplibre-gl.css"
@@ -56,6 +58,13 @@ interface VertexFeatureProperties {
 interface DragState {
   shapeId: string
   pointIndex: number
+}
+
+const TAP_MOVE_THRESHOLD_PX = 12
+
+interface MapInteractionState {
+  touchStartPoint: { x: number; y: number } | null
+  touchMoved: boolean
 }
 
 interface MapViewProps {
@@ -198,18 +207,19 @@ function fitMapToShapes(map: Map, shapes: Shape[]) {
 }
 
 function getVertexFromEvent(
-  event: MapLayerMouseEvent,
+  event: MapLayerMouseEvent | MapLayerTouchEvent,
 ): DragState | null {
   const feature = event.features?.[0] as
-    | GeoJSONFeature<VertexFeatureProperties>
+    | MapGeoJSONFeature
     | undefined
 
-  if (!feature?.properties?.draggable) {
+  const properties = feature?.properties as VertexFeatureProperties | undefined
+  if (!properties?.draggable) {
     return null
   }
 
-  const shapeId = feature.properties.shapeId
-  const pointIndex = feature.properties.pointIndex
+  const shapeId = properties.shapeId
+  const pointIndex = properties.pointIndex
 
   if (!shapeId || pointIndex === undefined) {
     return null
@@ -221,12 +231,190 @@ function getVertexFromEvent(
   }
 }
 
-function hasVertexAtPoint(map: Map, event: MapMouseEvent): boolean {
-  const features = map.queryRenderedFeatures(event.point, {
+function hasVertexAtPoint(
+  map: Map,
+  point: MapMouseEvent["point"],
+): boolean {
+  const features = map.queryRenderedFeatures(point, {
     layers: [LAYER_IDS.points],
   })
 
   return features.some((feature) => feature.properties?.draggable)
+}
+
+function bindMapInteractions(
+  map: Map,
+  refs: {
+    dragStateRef: RefObject<DragState | null>
+    didDragRef: RefObject<boolean>
+    isTouchDeviceRef: RefObject<boolean>
+    onAddPointRef: RefObject<(point: LngLat) => void>
+    onMoveVertexRef: RefObject<
+      (shapeId: string, pointIndex: number, point: LngLat) => void
+    >
+    onFinalizeVertexMoveRef: RefObject<(shapeId: string) => void>
+  },
+  interactionState: MapInteractionState,
+) {
+  const endDrag = () => {
+    const dragState = refs.dragStateRef.current
+    refs.dragStateRef.current = null
+    map.getCanvas().style.cursor = ""
+    if (refs.isTouchDeviceRef.current) {
+      map.dragPan.disable()
+    } else {
+      map.dragPan.enable()
+    }
+
+    if (dragState && refs.didDragRef.current) {
+      refs.onFinalizeVertexMoveRef.current(dragState.shapeId)
+    }
+
+    window.setTimeout(() => {
+      refs.didDragRef.current = false
+    }, 0)
+  }
+
+  const handlePointerMove = (lngLat: { lng: number; lat: number }) => {
+    const dragState = refs.dragStateRef.current
+    if (!dragState) {
+      return
+    }
+
+    refs.didDragRef.current = true
+    refs.onMoveVertexRef.current(dragState.shapeId, dragState.pointIndex, [
+      lngLat.lng,
+      lngLat.lat,
+    ])
+  }
+
+  const startDrag = (event: MapLayerMouseEvent | MapLayerTouchEvent) => {
+    const dragState = getVertexFromEvent(event)
+    if (!dragState) {
+      return
+    }
+
+    event.preventDefault()
+    refs.dragStateRef.current = dragState
+    refs.didDragRef.current = false
+    interactionState.touchStartPoint = null
+    interactionState.touchMoved = false
+    map.getCanvas().style.cursor = "grabbing"
+    map.dragPan.disable()
+  }
+
+  const handleAddPoint = (event: MapMouseEvent | MapTouchEvent) => {
+    if (hasVertexAtPoint(map, event.point)) {
+      return
+    }
+
+    refs.onAddPointRef.current([event.lngLat.lng, event.lngLat.lat])
+  }
+
+  map.on("mousedown", LAYER_IDS.points, startDrag)
+  map.on("mousemove", (event) => handlePointerMove(event.lngLat))
+  map.on("mouseup", endDrag)
+
+  map.on("touchstart", LAYER_IDS.points, startDrag)
+  map.on("touchmove", (event: MapTouchEvent) =>
+    handlePointerMove(event.lngLat),
+  )
+  map.on("touchend", endDrag)
+  map.on("touchcancel", endDrag)
+
+  map.on("mouseenter", LAYER_IDS.points, () => {
+    if (!refs.dragStateRef.current) {
+      map.getCanvas().style.cursor = "grab"
+    }
+  })
+
+  map.on("mouseleave", LAYER_IDS.points, () => {
+    if (!refs.dragStateRef.current) {
+      map.getCanvas().style.cursor = ""
+    }
+  })
+
+  map.on("contextmenu", (event) => {
+    event.preventDefault()
+
+    if (refs.isTouchDeviceRef.current) {
+      return
+    }
+
+    handleAddPoint(event)
+  })
+
+  map.on("touchstart", (event: MapTouchEvent) => {
+    if (!refs.isTouchDeviceRef.current) {
+      return
+    }
+
+    const touchCount = event.originalEvent.touches.length
+    if (touchCount >= 2) {
+      interactionState.touchStartPoint = null
+      interactionState.touchMoved = false
+      map.dragPan.enable()
+      return
+    }
+
+    if (refs.dragStateRef.current) {
+      return
+    }
+
+    map.dragPan.disable()
+    interactionState.touchStartPoint = { x: event.point.x, y: event.point.y }
+    interactionState.touchMoved = false
+  })
+
+  map.on("touchmove", (event: MapTouchEvent) => {
+    if (
+      !refs.isTouchDeviceRef.current ||
+      refs.dragStateRef.current ||
+      !interactionState.touchStartPoint
+    ) {
+      return
+    }
+
+    const dx = event.point.x - interactionState.touchStartPoint.x
+    const dy = event.point.y - interactionState.touchStartPoint.y
+    if (Math.hypot(dx, dy) > TAP_MOVE_THRESHOLD_PX) {
+      interactionState.touchMoved = true
+    }
+  })
+
+  map.on("touchend", (event: MapTouchEvent) => {
+    if (!refs.isTouchDeviceRef.current) {
+      return
+    }
+
+    if (refs.dragStateRef.current) {
+      return
+    }
+
+    const remainingTouches = event.originalEvent.touches.length
+    if (remainingTouches >= 2) {
+      map.dragPan.enable()
+      return
+    }
+
+    if (remainingTouches === 1) {
+      map.dragPan.disable()
+      return
+    }
+
+    const shouldAddPoint =
+      interactionState.touchStartPoint !== null &&
+      !interactionState.touchMoved &&
+      !refs.didDragRef.current
+
+    interactionState.touchStartPoint = null
+    interactionState.touchMoved = false
+    map.dragPan.disable()
+
+    if (shouldAddPoint) {
+      handleAddPoint(event)
+    }
+  })
 }
 
 export function MapView({
@@ -249,9 +437,12 @@ export function MapView({
   const dragStateRef = useRef<DragState | null>(null)
   const didDragRef = useRef(false)
   const isTouchDeviceRef = useRef(false)
+  const interactionStateRef = useRef<MapInteractionState>({
+    touchStartPoint: null,
+    touchMoved: false,
+  })
   const [basemapId, setBasemapId] = useState<BasemapId>(DEFAULT_BASEMAP_ID)
   const [mapReady, setMapReady] = useState(false)
-  const [contextHint, setContextHint] = useState<string | null>(null)
 
   useEffect(() => {
     onAddPointRef.current = onAddPoint
@@ -279,104 +470,24 @@ export function MapView({
 
     map.addControl(new NavigationControl(), "top-left")
 
-    const endDrag = () => {
-      const dragState = dragStateRef.current
-      dragStateRef.current = null
-      map.getCanvas().style.cursor = ""
-      map.dragPan.enable()
-
-      if (dragState && didDragRef.current) {
-        onFinalizeVertexMoveRef.current(dragState.shapeId)
-      }
-
-      window.setTimeout(() => {
-        didDragRef.current = false
-      }, 0)
-    }
-
-    const handlePointerMove = (event: MapMouseEvent) => {
-      const dragState = dragStateRef.current
-      if (!dragState) {
-        return
-      }
-
-      didDragRef.current = true
-      onMoveVertexRef.current(dragState.shapeId, dragState.pointIndex, [
-        event.lngLat.lng,
-        event.lngLat.lat,
-      ])
-    }
-
-    const startDrag = (event: MapLayerMouseEvent) => {
-      const dragState = getVertexFromEvent(event)
-      if (!dragState) {
-        return
-      }
-
-      event.preventDefault()
-      dragStateRef.current = dragState
-      didDragRef.current = false
-      map.getCanvas().style.cursor = "grabbing"
+    if (isTouchDeviceRef.current) {
       map.dragPan.disable()
     }
 
-    const handleAddPoint = (event: MapMouseEvent) => {
-      if (hasVertexAtPoint(map, event)) {
-        return
-      }
-
-      onAddPointRef.current([event.lngLat.lng, event.lngLat.lat])
+    const interactionRefs = {
+      dragStateRef,
+      didDragRef,
+      isTouchDeviceRef,
+      onAddPointRef,
+      onMoveVertexRef,
+      onFinalizeVertexMoveRef,
     }
+
+    bindMapInteractions(map, interactionRefs, interactionStateRef.current)
 
     map.on("load", () => {
       setupOverlay(map)
       setMapReady(true)
-    })
-
-    map.on("mousedown", LAYER_IDS.points, startDrag)
-    map.on("mousemove", handlePointerMove)
-    map.on("mouseup", endDrag)
-    map.on("mouseleave", endDrag)
-
-    map.on("touchstart", LAYER_IDS.points, (event) => {
-      startDrag(event as MapLayerMouseEvent)
-    })
-    map.on("touchmove", handlePointerMove)
-    map.on("touchend", endDrag)
-    map.on("touchcancel", endDrag)
-
-    map.on("mouseenter", LAYER_IDS.points, () => {
-      if (!dragStateRef.current) {
-        map.getCanvas().style.cursor = "grab"
-      }
-    })
-
-    map.on("mouseleave", LAYER_IDS.points, () => {
-      if (!dragStateRef.current) {
-        map.getCanvas().style.cursor = ""
-      }
-    })
-
-    map.on("click", (event) => {
-      if (didDragRef.current || dragStateRef.current) {
-        return
-      }
-
-      if (!isTouchDeviceRef.current) {
-        return
-      }
-
-      handleAddPoint(event)
-    })
-
-    map.on("contextmenu", (event) => {
-      event.preventDefault()
-
-      if (isTouchDeviceRef.current) {
-        return
-      }
-
-      handleAddPoint(event)
     })
 
     mapRef.current = map
@@ -440,7 +551,7 @@ export function MapView({
   }, [basemapId])
 
   const helperText = isCoarsePointerDevice()
-    ? "Tap to add points. Drag vertices to move. Pinch to pan the map."
+    ? "Tap to add points. Drag vertices to move. Use two fingers to pan."
     : "Right-click to add points. Drag vertices to move them."
 
   return (
@@ -450,7 +561,7 @@ export function MapView({
         <LayerSwitcher value={basemapId} onChange={setBasemapId} />
       </div>
       <div className="bg-background/95 text-foreground pointer-events-none absolute bottom-4 left-1/2 z-10 max-w-md -translate-x-1/2 rounded-lg border px-3 py-2 text-center text-xs shadow-sm">
-        {contextHint ?? helperText}
+        {helperText}
       </div>
     </div>
   )
