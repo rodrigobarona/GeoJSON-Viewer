@@ -1,5 +1,9 @@
 "use client"
 
+import { RiFileCopyLine } from "@remixicon/react"
+import { toast } from "sonner"
+
+import { Button } from "@workspace/ui/components/button"
 import { ScrollArea } from "@workspace/ui/components/scroll-area"
 import { Separator } from "@workspace/ui/components/separator"
 
@@ -9,6 +13,41 @@ interface CoordinateListProps {
   geojsonText: string
   isEmpty: boolean
   shapeLabel?: string
+}
+
+async function copyText(text: string, label: string) {
+  try {
+    await navigator.clipboard.writeText(text)
+    toast.success(`${label} copied to clipboard.`)
+  } catch {
+    toast.error(`Could not copy ${label.toLowerCase()}.`)
+  }
+}
+
+function SectionHeader({
+  title,
+  onCopy,
+}: {
+  title: string
+  onCopy: () => void
+}) {
+  return (
+    <div className="mb-2 flex items-center justify-between gap-2">
+      <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+        {title}
+      </p>
+      <Button
+        type="button"
+        variant="ghost"
+        size="xs"
+        onClick={onCopy}
+        aria-label={`Copy ${title}`}
+      >
+        <RiFileCopyLine />
+        Copy
+      </Button>
+    </div>
+  )
 }
 
 export function CoordinateList({
@@ -28,6 +67,8 @@ export function CoordinateList({
     )
   }
 
+  const jsonText = compactJsonText || geojsonText
+
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
       {shapeLabel ? (
@@ -37,9 +78,10 @@ export function CoordinateList({
       ) : null}
 
       <div className="min-h-0 flex-1">
-        <p className="text-muted-foreground mb-2 text-xs font-medium tracking-wide uppercase">
-          Points
-        </p>
+        <SectionHeader
+          title="Points"
+          onCopy={() => void copyText(lineListText, "Points")}
+        />
         <ScrollArea className="h-40 rounded-lg border bg-muted/30 p-3">
           <pre className="font-mono text-xs leading-relaxed whitespace-pre-wrap">
             {lineListText}
@@ -50,12 +92,13 @@ export function CoordinateList({
       <Separator />
 
       <div className="min-h-0 flex-1">
-        <p className="text-muted-foreground mb-2 text-xs font-medium tracking-wide uppercase">
-          JSON
-        </p>
+        <SectionHeader
+          title="JSON"
+          onCopy={() => void copyText(jsonText, "JSON")}
+        />
         <ScrollArea className="h-48 rounded-lg border bg-muted/30 p-3">
           <pre className="font-mono text-xs leading-relaxed whitespace-pre-wrap">
-            {compactJsonText || geojsonText}
+            {jsonText}
           </pre>
         </ScrollArea>
       </div>
