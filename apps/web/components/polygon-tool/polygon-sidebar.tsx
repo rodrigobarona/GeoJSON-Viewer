@@ -223,7 +223,7 @@ export function PolygonSidebar({
                 id="coordinate-import"
                 value={importText}
                 onChange={(event) => setImportText(event.target.value)}
-                placeholder={"-72.2839987, 42.9276063\n-72.2842133, 42.9272135"}
+                placeholder={"-9.139337, 38.722252\n-9.142104, 38.716372"}
                 className="field-sizing-fixed min-h-32 max-h-40 resize-none overflow-y-auto font-mono text-xs"
                 autoFocus
               />

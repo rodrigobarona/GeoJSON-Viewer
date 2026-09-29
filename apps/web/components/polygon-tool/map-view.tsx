@@ -463,8 +463,8 @@ export function MapView({
     const map = new Map({
       container: containerRef.current,
       style: basemap.style as string | StyleSpecification,
-      center: [-72.28, 42.93],
-      zoom: 14,
+      center: [-9.1393, 38.7223],
+      zoom: 13,
       attributionControl: {},
     })
 
