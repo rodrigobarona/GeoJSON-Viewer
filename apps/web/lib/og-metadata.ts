@@ -12,15 +12,12 @@ import {
 const OG_IMAGE_WIDTH = 1200
 const OG_IMAGE_HEIGHT = 630
 
-function buildOgImageUrl(coords: string | null): string {
-  const siteUrl = getSiteUrl()
-  const url = new URL("/api/og", siteUrl)
-
-  if (coords) {
-    url.searchParams.set("coords", coords)
+function buildOgImagePath(coords: string | null): string {
+  if (!coords) {
+    return "/api/og"
   }
 
-  return url.toString()
+  return `/api/og?coords=${encodeURIComponent(coords)}`
 }
 
 function buildTitle(preview: ReturnType<typeof getOgPreviewData>): string {
@@ -47,12 +44,18 @@ function buildDescription(preview: ReturnType<typeof getOgPreviewData>): string 
   return `Shared map with ${preview.shapeCount} polygons and ${preview.pointCount} coordinate points. ${SITE_DESCRIPTION}`
 }
 
-export function buildPageMetadata(coords: string | null): Metadata {
+export function buildPageMetadata(
+  coords: string | null,
+  requestHost?: string | null,
+): Metadata {
   const preview = getOgPreviewData(coords)
   const title = buildTitle(preview)
   const description = buildDescription(preview)
-  const siteUrl = getSiteUrl()
-  const ogImageUrl = buildOgImageUrl(coords)
+  const siteUrl = getSiteUrl(requestHost)
+  const ogImagePath = buildOgImagePath(coords)
+  const pageUrl = coords
+    ? `${siteUrl}/?coords=${encodeURIComponent(coords)}`
+    : siteUrl
 
   return {
     title,
@@ -61,13 +64,13 @@ export function buildPageMetadata(coords: string | null): Metadata {
     openGraph: {
       type: "website",
       locale: "en_US",
-      url: coords ? `${siteUrl}/?coords=${encodeURIComponent(coords)}` : siteUrl,
+      url: pageUrl,
       siteName: SITE_NAME,
       title,
       description,
       images: [
         {
-          url: ogImageUrl,
+          url: ogImagePath,
           width: OG_IMAGE_WIDTH,
           height: OG_IMAGE_HEIGHT,
           alt: preview.hasGeometry
@@ -81,7 +84,7 @@ export function buildPageMetadata(coords: string | null): Metadata {
       title,
       description,
       creator: "@rbarona",
-      images: [ogImageUrl],
+      images: [ogImagePath],
     },
     authors: [{ name: CREATOR_NAME, url: CREATOR_X_URL }],
     creator: CREATOR_NAME,

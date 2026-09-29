@@ -4,11 +4,15 @@ import { Geist, Geist_Mono } from "next/font/google"
 import "@workspace/ui/globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { buildPageMetadata } from "@/lib/og-metadata"
+import { DEFAULT_PRODUCTION_URL } from "@/lib/site"
 import { cn } from "@workspace/ui/lib/utils"
 import { Toaster } from "@workspace/ui/components/sonner"
 import { TooltipProvider } from "@workspace/ui/components/tooltip"
 
-export const metadata: Metadata = buildPageMetadata(null)
+export const metadata: Metadata = buildPageMetadata(
+  null,
+  new URL(DEFAULT_PRODUCTION_URL).host,
+)
 
 const geist = Geist({subsets:['latin'],variable:'--font-sans'})
 
