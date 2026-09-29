@@ -18,12 +18,10 @@ import {
   type BasemapId,
 } from "@/lib/basemaps"
 import {
-  buildOpenLineGeoJson,
-  buildPointsFeatureCollection,
-  buildPolygonOutput,
-  getBounds,
-  type LngLat,
+  buildShapesOverlayData,
+  getBoundsForShapes,
 } from "@/lib/geojson"
+import type { Shape } from "@/lib/shapes"
 
 configureMapLibreWorker()
 
@@ -46,10 +44,10 @@ const LAYER_IDS = {
 } as const
 
 interface MapViewProps {
-  points: LngLat[]
-  isClosed: boolean
+  shapes: Shape[]
+  activeShapeId: string | null
   fitBoundsKey: number
-  onAddPoint: (point: LngLat) => void
+  onAddPoint: (point: [number, number]) => void
 }
 
 function addOverlaySources(map: Map) {
@@ -82,7 +80,7 @@ function addOverlayLayers(map: Map) {
       type: "fill",
       source: SOURCE_IDS.polygon,
       paint: {
-        "fill-color": "#41d8f0",
+        "fill-color": ["get", "color"],
         "fill-opacity": 0.25,
       },
     })
@@ -94,7 +92,7 @@ function addOverlayLayers(map: Map) {
       type: "line",
       source: SOURCE_IDS.polygon,
       paint: {
-        "line-color": "#41d8f0",
+        "line-color": ["get", "color"],
         "line-width": 2,
       },
     })
@@ -106,7 +104,7 @@ function addOverlayLayers(map: Map) {
       type: "line",
       source: SOURCE_IDS.line,
       paint: {
-        "line-color": "#41d8f0",
+        "line-color": ["get", "color"],
         "line-width": 2,
       },
     })
@@ -118,8 +116,13 @@ function addOverlayLayers(map: Map) {
       type: "circle",
       source: SOURCE_IDS.points,
       paint: {
-        "circle-color": "#41d8f0",
-        "circle-radius": 5,
+        "circle-color": ["get", "color"],
+        "circle-radius": [
+          "case",
+          ["boolean", ["get", "isActive"], false],
+          6,
+          5,
+        ],
         "circle-stroke-color": "#ffffff",
         "circle-stroke-width": 1.5,
       },
@@ -132,7 +135,11 @@ function setupOverlay(map: Map) {
   addOverlayLayers(map)
 }
 
-function updateOverlayData(map: Map, points: LngLat[], isClosed: boolean) {
+function updateOverlayData(
+  map: Map,
+  shapes: Shape[],
+  activeShapeId: string | null,
+) {
   const lineSource = map.getSource(SOURCE_IDS.line) as GeoJSONSource
   const polygonSource = map.getSource(SOURCE_IDS.polygon) as GeoJSONSource
   const pointsSource = map.getSource(SOURCE_IDS.points) as GeoJSONSource
@@ -141,23 +148,10 @@ function updateOverlayData(map: Map, points: LngLat[], isClosed: boolean) {
     return
   }
 
-  if (isClosed && points.length >= 3) {
-    const polygon = buildPolygonOutput(points)
-    polygonSource.setData({
-      type: "Feature",
-      properties: {},
-      geometry: polygon.geojson,
-    })
-    lineSource.setData(EMPTY_FEATURE_COLLECTION)
-  } else if (points.length >= 2) {
-    lineSource.setData(buildOpenLineGeoJson(points))
-    polygonSource.setData(EMPTY_FEATURE_COLLECTION)
-  } else {
-    lineSource.setData(EMPTY_FEATURE_COLLECTION)
-    polygonSource.setData(EMPTY_FEATURE_COLLECTION)
-  }
-
-  pointsSource.setData(buildPointsFeatureCollection(points))
+  const overlay = buildShapesOverlayData(shapes, activeShapeId)
+  lineSource.setData(overlay.lines)
+  polygonSource.setData(overlay.polygons)
+  pointsSource.setData(overlay.points)
 
   const setVisibility = (layerId: string, visible: boolean) => {
     if (!map.getLayer(layerId)) {
@@ -167,14 +161,14 @@ function updateOverlayData(map: Map, points: LngLat[], isClosed: boolean) {
     map.setLayoutProperty(layerId, "visibility", visible ? "visible" : "none")
   }
 
-  setVisibility(LAYER_IDS.line, !isClosed && points.length >= 2)
-  setVisibility(LAYER_IDS.polygonFill, isClosed && points.length >= 3)
-  setVisibility(LAYER_IDS.polygonOutline, isClosed && points.length >= 3)
-  setVisibility(LAYER_IDS.points, points.length > 0)
+  setVisibility(LAYER_IDS.line, overlay.lines.features.length > 0)
+  setVisibility(LAYER_IDS.polygonFill, overlay.polygons.features.length > 0)
+  setVisibility(LAYER_IDS.polygonOutline, overlay.polygons.features.length > 0)
+  setVisibility(LAYER_IDS.points, overlay.points.features.length > 0)
 }
 
-function fitMapToPoints(map: Map, points: LngLat[]) {
-  const bounds = getBounds(points)
+function fitMapToShapes(map: Map, shapes: Shape[]) {
+  const bounds = getBoundsForShapes(shapes)
   if (!bounds) {
     return
   }
@@ -187,26 +181,26 @@ function fitMapToPoints(map: Map, points: LngLat[]) {
 }
 
 export function MapView({
-  points,
-  isClosed,
+  shapes,
+  activeShapeId,
   fitBoundsKey,
   onAddPoint,
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<Map | null>(null)
-  const previousPointCountRef = useRef(0)
+  const previousShapeCountRef = useRef(0)
   const basemapInitializedRef = useRef(false)
   const onAddPointRef = useRef(onAddPoint)
-  const pointsRef = useRef(points)
-  const isClosedRef = useRef(isClosed)
+  const shapesRef = useRef(shapes)
+  const activeShapeIdRef = useRef(activeShapeId)
   const [basemapId, setBasemapId] = useState<BasemapId>(DEFAULT_BASEMAP_ID)
   const [mapReady, setMapReady] = useState(false)
   const [contextHint, setContextHint] = useState<string | null>(null)
 
   useEffect(() => {
     onAddPointRef.current = onAddPoint
-    pointsRef.current = points
-    isClosedRef.current = isClosed
+    shapesRef.current = shapes
+    activeShapeIdRef.current = activeShapeId
   })
 
   useEffect(() => {
@@ -256,26 +250,23 @@ export function MapView({
     }
 
     setupOverlay(map)
-    updateOverlayData(map, points, isClosed)
+    updateOverlayData(map, shapes, activeShapeId)
 
-    const previousCount = previousPointCountRef.current
-    if (
-      points.length > 0 &&
-      (previousCount === 0 || points.length - previousCount > 1)
-    ) {
-      fitMapToPoints(map, points)
+    const previousCount = previousShapeCountRef.current
+    if (shapes.length > 0 && (previousCount === 0 || shapes.length > previousCount)) {
+      fitMapToShapes(map, shapes)
     }
-    previousPointCountRef.current = points.length
-  }, [isClosed, mapReady, points])
+    previousShapeCountRef.current = shapes.length
+  }, [activeShapeId, mapReady, shapes])
 
   useEffect(() => {
     const map = mapRef.current
-    if (!map || !mapReady || fitBoundsKey === 0 || points.length === 0) {
+    if (!map || !mapReady || fitBoundsKey === 0 || shapes.length === 0) {
       return
     }
 
-    fitMapToPoints(map, points)
-  }, [fitBoundsKey, mapReady, points])
+    fitMapToShapes(map, shapes)
+  }, [fitBoundsKey, mapReady, shapes])
 
   useEffect(() => {
     if (!basemapInitializedRef.current) {
@@ -292,7 +283,11 @@ export function MapView({
 
     const restoreOverlay = () => {
       setupOverlay(map)
-      updateOverlayData(map, pointsRef.current, isClosedRef.current)
+      updateOverlayData(
+        map,
+        shapesRef.current,
+        activeShapeIdRef.current,
+      )
     }
 
     map.setStyle(basemap.style as string | StyleSpecification)

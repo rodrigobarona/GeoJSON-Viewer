@@ -18,8 +18,8 @@ function PolygonToolContent() {
     <ResizablePanelGroup orientation="horizontal" className="h-full w-full">
       <ResizablePanel defaultSize="75" minSize="50" className="min-w-0">
         <MapView
-          points={tool.points}
-          isClosed={tool.isClosed}
+          shapes={tool.shapes}
+          activeShapeId={tool.activeShapeId}
           fitBoundsKey={tool.fitBoundsKey}
           onAddPoint={tool.addPoint}
         />

@@ -3,10 +3,12 @@ import type {
   Feature,
   FeatureCollection,
   LineString,
+  Point,
   Polygon,
 } from "geojson"
 
 import { closeRing, pointsEqual } from "@/lib/coordinates"
+import type { Shape } from "@/lib/shapes"
 
 export type LngLat = [number, number]
 
@@ -105,4 +107,113 @@ export function getBounds(
     [minLng, minLat],
     [maxLng, maxLat],
   ]
+}
+
+export function getBoundsForShapes(
+  shapes: Shape[],
+): [[number, number], [number, number]] | null {
+  const allPoints = shapes.flatMap((shape) => shape.points)
+  return getBounds(allPoints)
+}
+
+export const SHAPE_COLORS = [
+  "#41d8f0",
+  "#a078f0",
+  "#f0a041",
+  "#41f0a0",
+  "#f078a0",
+  "#78a0f0",
+] as const
+
+export function getShapeColor(index: number): string {
+  return SHAPE_COLORS[index % SHAPE_COLORS.length]!
+}
+
+export function buildShapesOverlayData(shapes: Shape[], activeShapeId: string | null) {
+  const lineFeatures: Feature<LineString>[] = []
+  const polygonFeatures: Feature<Polygon>[] = []
+  const pointFeatures: Feature<Point>[] = []
+
+  shapes.forEach((shape, shapeIndex) => {
+    const color = getShapeColor(shapeIndex)
+    const isActive = shape.id === activeShapeId
+
+    if (shape.isClosed && shape.points.length >= 3) {
+      const polygon = buildPolygonOutput(shape.points)
+      polygonFeatures.push({
+        type: "Feature",
+        properties: { shapeId: shape.id, shapeIndex, color, isActive },
+        geometry: polygon.geojson,
+      })
+    } else if (shape.points.length >= 2) {
+      lineFeatures.push({
+        type: "Feature",
+        properties: { shapeId: shape.id, shapeIndex, color, isActive },
+        geometry: {
+          type: "LineString",
+          coordinates: shape.points,
+        },
+      })
+    }
+
+    shape.points.forEach(([lng, lat], pointIndex) => {
+      pointFeatures.push({
+        type: "Feature",
+        properties: {
+          shapeId: shape.id,
+          shapeIndex,
+          color,
+          isActive,
+          pointIndex,
+        },
+        geometry: {
+          type: "Point",
+          coordinates: [lng, lat],
+        },
+      })
+    })
+  })
+
+  return {
+    lines: {
+      type: "FeatureCollection" as const,
+      features: lineFeatures,
+    },
+    polygons: {
+      type: "FeatureCollection" as const,
+      features: polygonFeatures,
+    },
+    points: {
+      type: "FeatureCollection" as const,
+      features: pointFeatures,
+    },
+  }
+}
+
+export function buildShapesGeoJsonCollection(shapes: Shape[]): FeatureCollection {
+  const features: Feature<Polygon | LineString>[] = []
+
+  for (const shape of shapes) {
+    if (shape.points.length === 0) {
+      continue
+    }
+
+    if (shape.isClosed && shape.points.length >= 3) {
+      features.push({
+        type: "Feature",
+        properties: { id: shape.id },
+        geometry: buildPolygonOutput(shape.points).geojson,
+      })
+      continue
+    }
+
+    if (shape.points.length >= 2) {
+      features.push(buildOpenLineGeoJson(shape.points))
+    }
+  }
+
+  return {
+    type: "FeatureCollection",
+    features,
+  }
 }

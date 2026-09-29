@@ -47,45 +47,71 @@ function parseLineByLine(text: string): LngLat[] {
   return lines.map(parsePair)
 }
 
-function extractPointsFromGeoJson(value: unknown): LngLat[] {
+function extractShapesFromGeoJson(value: unknown): ParsedShapeImport[] {
   if (!value || typeof value !== "object") {
     throw new CoordinateParseError("Invalid GeoJSON.")
   }
 
   const data = value as Record<string, unknown>
-  const type = data.type
-
-  if (type === "FeatureCollection") {
+  if (data.type === "FeatureCollection") {
     const features = data.features
     if (!Array.isArray(features) || features.length === 0) {
       throw new CoordinateParseError("FeatureCollection has no features.")
     }
-    return extractPointsFromGeoJson(features[0])
+
+    return features.flatMap((feature) => {
+      const parsed = parseGeoJsonShape(feature)
+      return parsed ? [parsed] : []
+    })
   }
 
-  if (type === "Feature") {
-    return extractPointsFromGeoJson(data.geometry)
+  const single = parseGeoJsonShape(value)
+  if (!single) {
+    throw new CoordinateParseError(
+      "Unsupported GeoJSON type. Use Polygon, LineString, or Feature.",
+    )
   }
 
-  if (type === "Polygon") {
-    const coordinates = data.coordinates
+  return [single]
+}
+
+function parseGeoJsonShape(value: unknown): ParsedShapeImport | null {
+  if (!value || typeof value !== "object") {
+    return null
+  }
+
+  const data = value as Record<string, unknown>
+  const geometry = data.type === "Feature" ? data.geometry : value
+  if (!geometry || typeof geometry !== "object") {
+    return null
+  }
+
+  const geometryData = geometry as Record<string, unknown>
+  if (geometryData.type === "Polygon") {
+    const coordinates = geometryData.coordinates
     if (!Array.isArray(coordinates) || !Array.isArray(coordinates[0])) {
       throw new CoordinateParseError("Invalid Polygon coordinates.")
     }
-    return normalizeRing(coordinates[0] as LngLat[])
+
+    return {
+      points: normalizeRing(coordinates[0] as LngLat[]),
+      isClosed: true,
+    }
   }
 
-  if (type === "LineString") {
-    const coordinates = data.coordinates
+  if (geometryData.type === "LineString") {
+    const coordinates = geometryData.coordinates
     if (!Array.isArray(coordinates)) {
       throw new CoordinateParseError("Invalid LineString coordinates.")
     }
-    return coordinates as LngLat[]
+
+    return {
+      points: coordinates as LngLat[],
+      isClosed: false,
+    }
   }
 
-  throw new CoordinateParseError(
-    "Unsupported GeoJSON type. Use Polygon, LineString, or Feature.",
-  )
+  return null
 }
 
 function normalizeRing(ring: LngLat[]): LngLat[] {
@@ -115,28 +141,57 @@ export interface ParsedCoordinates {
   isClosed: boolean
 }
 
-function isGeoJsonPolygon(value: unknown): boolean {
-  if (!value || typeof value !== "object") {
-    return false
+export interface ParsedShapeImport {
+  points: LngLat[]
+  isClosed: boolean
+}
+
+export function parseMultipleCoordinatesFromText(
+  text: string,
+): ParsedShapeImport[] {
+  const trimmed = text.trim()
+  if (!trimmed) {
+    throw new CoordinateParseError("Paste coordinates or GeoJSON to import.")
   }
 
-  const data = value as Record<string, unknown>
-  if (data.type === "Polygon") {
-    return true
-  }
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(trimmed) as unknown
+      if (Array.isArray(parsed)) {
+        if (
+          parsed.length > 0 &&
+          Array.isArray(parsed[0]) &&
+          typeof parsed[0][0] === "number"
+        ) {
+          return [
+            {
+              points: normalizeRing(parsed as LngLat[]),
+              isClosed: parsed.length >= 3,
+            },
+          ]
+        }
+        throw new CoordinateParseError("Unsupported JSON array format.")
+      }
 
-  if (data.type === "Feature") {
-    return isGeoJsonPolygon(data.geometry)
-  }
-
-  if (data.type === "FeatureCollection") {
-    const features = data.features
-    if (Array.isArray(features) && features[0]) {
-      return isGeoJsonPolygon(features[0])
+      return extractShapesFromGeoJson(parsed).map((shape) => ({
+        points: shape.points,
+        isClosed: shape.isClosed || shape.points.length >= 3,
+      }))
+    } catch (error) {
+      if (error instanceof CoordinateParseError) {
+        throw error
+      }
+      throw new CoordinateParseError("Invalid JSON.")
     }
   }
 
-  return false
+  const points = parseLineByLine(trimmed)
+  return [
+    {
+      points,
+      isClosed: points.length >= 3,
+    },
+  ]
 }
 
 export function parseCoordinatesFromText(text: string): ParsedCoordinates {
@@ -162,9 +217,15 @@ export function parseCoordinatesFromText(text: string): ParsedCoordinates {
         throw new CoordinateParseError("Unsupported JSON array format.")
       }
 
+      const shapes = extractShapesFromGeoJson(parsed)
+      const first = shapes[0]
+      if (!first) {
+        throw new CoordinateParseError("No coordinates found in GeoJSON.")
+      }
+
       return {
-        points: extractPointsFromGeoJson(parsed),
-        isClosed: isGeoJsonPolygon(parsed),
+        points: first.points,
+        isClosed: first.isClosed,
       }
     } catch (error) {
       if (error instanceof CoordinateParseError) {
@@ -186,11 +247,23 @@ export function formatCoordinatesLineByLine(points: LngLat[]): string {
     .join("\n")
 }
 
-export function parseCoordsFromUrl(value: string | null): LngLat[] {
-  if (!value) {
-    return []
-  }
+export function serializeShapeToUrl(points: LngLat[]): string {
+  return points.map(([lng, lat]) => `${lng},${lat}`).join("|")
+}
 
+/** @deprecated Use serializeShapesToUrl */
+export function serializeCoordsToUrl(points: LngLat[]): string {
+  return serializeShapeToUrl(points)
+}
+
+export function serializeShapesToUrl(shapes: { points: LngLat[] }[]): string {
+  return shapes
+    .filter((shape) => shape.points.length > 0)
+    .map((shape) => serializeShapeToUrl(shape.points))
+    .join(";")
+}
+
+export function parseShapeFromUrl(value: string): LngLat[] {
   const pairs = value.split("|").filter(Boolean)
   if (pairs.length === 0) {
     return []
@@ -199,8 +272,21 @@ export function parseCoordsFromUrl(value: string | null): LngLat[] {
   return pairs.map((pair) => parsePair(pair.replace(",", " ")))
 }
 
-export function serializeCoordsToUrl(points: LngLat[]): string {
-  return points.map(([lng, lat]) => `${lng},${lat}`).join("|")
+export function parseShapesFromUrl(value: string | null): LngLat[][] {
+  if (!value) {
+    return []
+  }
+
+  return value
+    .split(";")
+    .map(parseShapeFromUrl)
+    .filter((points) => points.length > 0)
+}
+
+/** @deprecated Use parseShapesFromUrl */
+export function parseCoordsFromUrl(value: string | null): LngLat[] {
+  const shapes = parseShapesFromUrl(value)
+  return shapes[0] ?? []
 }
 
 export function pointsEqual(a: LngLat, b: LngLat): boolean {

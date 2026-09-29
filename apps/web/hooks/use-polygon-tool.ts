@@ -7,20 +7,26 @@ import { toast } from "sonner"
 import {
   CoordinateParseError,
   formatCoordinatesLineByLine,
-  parseCoordinatesFromText,
-  parseCoordsFromUrl,
-  serializeCoordsToUrl,
+  parseMultipleCoordinatesFromText,
+  parseShapesFromUrl,
+  serializeShapesToUrl,
 } from "@/lib/coordinates"
 import {
   buildOpenLineGeoJson,
   buildPolygonOutput,
+  buildShapesGeoJsonCollection,
   type LngLat,
 } from "@/lib/geojson"
+import {
+  closeShapeRecord,
+  createShape,
+  getShapeOrNull,
+  type Shape,
+} from "@/lib/shapes"
 
 export interface PolygonToolState {
-  points: LngLat[]
-  isClosed: boolean
-  ringWasReversed: boolean
+  shapes: Shape[]
+  activeShapeId: string | null
   importText: string
   showImportPanel: boolean
   fitBoundsKey: number
@@ -30,6 +36,7 @@ export interface PolygonToolState {
   canUndo: boolean
   canClose: boolean
   isEmpty: boolean
+  shapeCount: number
 }
 
 export interface PolygonToolActions {
@@ -37,6 +44,9 @@ export interface PolygonToolActions {
   undo: () => void
   reset: () => void
   closeShape: () => void
+  newPolygon: () => void
+  selectShape: (shapeId: string) => void
+  deleteActiveShape: () => void
   setImportText: (value: string) => void
   openImportPanel: () => void
   cancelImport: () => void
@@ -44,87 +54,84 @@ export interface PolygonToolActions {
   shareLink: () => Promise<void>
 }
 
+function shapesFromUrl(searchParams: URLSearchParams): Shape[] {
+  const parsedShapes = parseShapesFromUrl(searchParams.get("coords"))
+  return parsedShapes.map((points) => {
+    const isClosed = points.length >= 3
+    const shape = createShape(points, isClosed)
+    return isClosed ? closeShapeRecord(shape) : shape
+  })
+}
+
 function getInitialStateFromUrl(searchParams: URLSearchParams) {
-  const coordsParam = searchParams.get("coords")
-  if (!coordsParam) {
-    return {
-      points: [] as LngLat[],
-      isClosed: false,
-      ringWasReversed: false,
-      importText: "",
-    }
+  const shapes = shapesFromUrl(searchParams)
+  const activeShape =
+    shapes.find((shape) => !shape.isClosed) ?? shapes[shapes.length - 1] ?? null
+
+  return {
+    shapes,
+    activeShapeId: activeShape?.id ?? null,
+    importText: activeShape
+      ? formatCoordinatesLineByLine(activeShape.points)
+      : "",
   }
+}
 
-  try {
-    const parsed = parseCoordsFromUrl(coordsParam)
-    if (parsed.length === 0) {
-      return {
-        points: [] as LngLat[],
-        isClosed: false,
-        ringWasReversed: false,
-        importText: "",
-      }
-    }
-
-    const closed = parsed.length >= 3
-    const ringWasReversed = closed
-      ? buildPolygonOutput(parsed).ringWasReversed
-      : false
-
-    return {
-      points: parsed,
-      isClosed: closed,
-      ringWasReversed,
-      importText: formatCoordinatesLineByLine(parsed),
-    }
-  } catch (error) {
-    const message =
-      error instanceof CoordinateParseError
-        ? error.message
-        : "Could not read coordinates from URL."
-    toast.error(message)
-    return {
-      points: [] as LngLat[],
-      isClosed: false,
-      ringWasReversed: false,
-      importText: "",
-    }
-  }
+function updateShapeInList(shapes: Shape[], nextShape: Shape): Shape[] {
+  return shapes.map((shape) => (shape.id === nextShape.id ? nextShape : shape))
 }
 
 export function usePolygonTool(): PolygonToolState & PolygonToolActions {
   const searchParams = useSearchParams()
   const [initialState] = useState(() => getInitialStateFromUrl(searchParams))
-  const [points, setPoints] = useState<LngLat[]>(initialState.points)
-  const [isClosed, setIsClosed] = useState(initialState.isClosed)
-  const [ringWasReversed, setRingWasReversed] = useState(
-    initialState.ringWasReversed,
+  const [shapes, setShapes] = useState<Shape[]>(initialState.shapes)
+  const [activeShapeId, setActiveShapeId] = useState<string | null>(
+    initialState.activeShapeId,
   )
   const [importText, setImportText] = useState(initialState.importText)
   const [showImportPanel, setShowImportPanel] = useState(false)
   const [fitBoundsKey, setFitBoundsKey] = useState(
-    initialState.points.length > 0 ? 1 : 0,
+    initialState.shapes.length > 0 ? 1 : 0,
+  )
+
+  const activeShape = useMemo(
+    () => getShapeOrNull(shapes, activeShapeId),
+    [activeShapeId, shapes],
   )
 
   const lineListText = useMemo(
-    () => formatCoordinatesLineByLine(points),
-    [points],
+    () =>
+      activeShape ? formatCoordinatesLineByLine(activeShape.points) : "",
+    [activeShape],
   )
 
   const { geojsonText, compactJsonText } = useMemo(() => {
-    if (points.length === 0) {
+    if (shapes.length === 0) {
       return { geojsonText: "", compactJsonText: "" }
     }
 
-    if (isClosed && points.length >= 3) {
-      const output = buildPolygonOutput(points)
+    if (shapes.length > 1) {
+      const collection = buildShapesGeoJsonCollection(shapes)
+      return {
+        geojsonText: JSON.stringify(collection, null, 2),
+        compactJsonText: JSON.stringify(collection, null, 2),
+      }
+    }
+
+    const shape = shapes[0]
+    if (!shape || shape.points.length === 0) {
+      return { geojsonText: "", compactJsonText: "" }
+    }
+
+    if (shape.isClosed && shape.points.length >= 3) {
+      const output = buildPolygonOutput(shape.points)
       return {
         geojsonText: JSON.stringify(output.geojson, null, 2),
         compactJsonText: JSON.stringify(output.compact, null, 2),
       }
     }
 
-    const line = buildOpenLineGeoJson(points)
+    const line = buildOpenLineGeoJson(shape.points)
     return {
       geojsonText: JSON.stringify(line.geometry, null, 2),
       compactJsonText: JSON.stringify(
@@ -133,75 +140,155 @@ export function usePolygonTool(): PolygonToolState & PolygonToolActions {
         2,
       ),
     }
-  }, [isClosed, points])
+  }, [shapes])
 
-  const addPoint = useCallback((point: LngLat) => {
-    setPoints((current) => [...current, point])
-    setIsClosed(false)
-    setRingWasReversed(false)
+  const startDraftShape = useCallback((point?: LngLat) => {
+    const nextShape = createShape(point ? [point] : [])
+    setShapes((current) => [...current, nextShape])
+    setActiveShapeId(nextShape.id)
+    return nextShape.id
   }, [])
+
+  const addPoint = useCallback(
+    (point: LngLat) => {
+      if (!activeShape || activeShape.isClosed) {
+        startDraftShape(point)
+        return
+      }
+
+      setShapes((current) =>
+        updateShapeInList(current, {
+          ...activeShape,
+          points: [...activeShape.points, point],
+          isClosed: false,
+          ringWasReversed: false,
+        }),
+      )
+    },
+    [activeShape, startDraftShape],
+  )
 
   const undo = useCallback(() => {
-    setPoints((current) => {
-      if (current.length === 0) {
-        return current
-      }
-      return current.slice(0, -1)
-    })
-    setIsClosed(false)
-    setRingWasReversed(false)
-  }, [])
+    if (!activeShape || activeShape.isClosed || activeShape.points.length === 0) {
+      return
+    }
+
+    const nextPoints = activeShape.points.slice(0, -1)
+    if (nextPoints.length === 0) {
+      setShapes((current) => {
+        const remaining = current.filter((shape) => shape.id !== activeShape.id)
+        setActiveShapeId(remaining[remaining.length - 1]?.id ?? null)
+        return remaining
+      })
+      return
+    }
+
+    setShapes((current) =>
+      updateShapeInList(current, {
+        ...activeShape,
+        points: nextPoints,
+        isClosed: false,
+        ringWasReversed: false,
+      }),
+    )
+  }, [activeShape])
 
   const reset = useCallback(() => {
-    setPoints([])
-    setIsClosed(false)
-    setRingWasReversed(false)
+    setShapes([])
+    setActiveShapeId(null)
     setImportText("")
     setShowImportPanel(false)
   }, [])
 
   const closeShape = useCallback(() => {
-    if (points.length < 3) {
+    if (!activeShape || activeShape.isClosed || activeShape.points.length < 3) {
       return
     }
 
-    const output = buildPolygonOutput(points)
-    setRingWasReversed(output.ringWasReversed)
-    setIsClosed(true)
-  }, [points])
+    setShapes((current) =>
+      updateShapeInList(current, closeShapeRecord(activeShape)),
+    )
+  }, [activeShape])
+
+  const newPolygon = useCallback(() => {
+    if (activeShape && !activeShape.isClosed && activeShape.points.length === 0) {
+      return
+    }
+
+    startDraftShape()
+    setImportText("")
+    toast.message("Started a new polygon. Click the map to add points.")
+  }, [activeShape, startDraftShape])
+
+  const selectShape = useCallback(
+    (shapeId: string) => {
+      const shape = shapes.find((entry) => entry.id === shapeId)
+      if (!shape) {
+        return
+      }
+
+      setActiveShapeId(shapeId)
+      setImportText(formatCoordinatesLineByLine(shape.points))
+    },
+    [shapes],
+  )
+
+  const deleteActiveShape = useCallback(() => {
+    if (!activeShape) {
+      return
+    }
+
+    const remaining = shapes.filter((shape) => shape.id !== activeShape.id)
+    setShapes(remaining)
+    setActiveShapeId(remaining[remaining.length - 1]?.id ?? null)
+    setImportText(
+      remaining.length > 0
+        ? formatCoordinatesLineByLine(remaining[remaining.length - 1]!.points)
+        : "",
+    )
+  }, [activeShape, shapes])
 
   const openImportPanel = useCallback(() => {
     setImportText((current) =>
-      current.trim() ? current : formatCoordinatesLineByLine(points),
+      current.trim()
+        ? current
+        : activeShape
+          ? formatCoordinatesLineByLine(activeShape.points)
+          : "",
     )
     setShowImportPanel(true)
-  }, [points])
+  }, [activeShape])
 
   const cancelImport = useCallback(() => {
     setShowImportPanel(false)
-    setImportText(formatCoordinatesLineByLine(points))
-  }, [points])
+    setImportText(
+      activeShape ? formatCoordinatesLineByLine(activeShape.points) : "",
+    )
+  }, [activeShape])
 
   const importFromText = useCallback(() => {
     try {
-      const parsed = parseCoordinatesFromText(importText)
-      const shouldClose = parsed.isClosed || parsed.points.length >= 3
+      const parsedShapes = parseMultipleCoordinatesFromText(importText).map(
+        (entry) => {
+          const shouldClose = entry.isClosed || entry.points.length >= 3
+          const shape = createShape(entry.points, shouldClose)
+          return shouldClose ? closeShapeRecord(shape) : shape
+        },
+      )
 
-      setPoints(parsed.points)
-      setIsClosed(shouldClose)
-      setImportText(formatCoordinatesLineByLine(parsed.points))
+      if (parsedShapes.length === 0) {
+        throw new CoordinateParseError("No coordinates found to import.")
+      }
+
+      setShapes((current) => [...current, ...parsedShapes])
+      const lastImported = parsedShapes[parsedShapes.length - 1]!
+      setActiveShapeId(lastImported.id)
+      setImportText(formatCoordinatesLineByLine(lastImported.points))
       setShowImportPanel(false)
       setFitBoundsKey((current) => current + 1)
 
-      if (shouldClose) {
-        const output = buildPolygonOutput(parsed.points)
-        setRingWasReversed(output.ringWasReversed)
-      } else {
-        setRingWasReversed(false)
-      }
-
       toast.success(
-        `Imported ${parsed.points.length} point${parsed.points.length === 1 ? "" : "s"}.`,
+        `Imported ${parsedShapes.length} polygon${parsedShapes.length === 1 ? "" : "s"}.`,
       )
     } catch (error) {
       const message =
@@ -213,13 +300,13 @@ export function usePolygonTool(): PolygonToolState & PolygonToolActions {
   }, [importText])
 
   const shareLink = useCallback(async () => {
-    if (points.length === 0) {
-      toast.error("Add at least one point before sharing.")
+    if (shapes.length === 0) {
+      toast.error("Add at least one polygon before sharing.")
       return
     }
 
     const url = new URL(window.location.href)
-    url.searchParams.set("coords", serializeCoordsToUrl(points))
+    url.searchParams.set("coords", serializeShapesToUrl(shapes))
     window.history.replaceState({}, "", url.toString())
 
     try {
@@ -228,25 +315,32 @@ export function usePolygonTool(): PolygonToolState & PolygonToolActions {
     } catch {
       toast.error("Could not copy link. Copy the URL from the address bar.")
     }
-  }, [points])
+  }, [shapes])
 
   return {
-    points,
-    isClosed,
-    ringWasReversed,
+    shapes,
+    activeShapeId,
     importText,
     showImportPanel,
     fitBoundsKey,
     lineListText,
     geojsonText,
     compactJsonText,
-    canUndo: points.length > 0,
-    canClose: points.length >= 3 && !isClosed,
-    isEmpty: points.length === 0,
+    canUndo: Boolean(
+      activeShape && !activeShape.isClosed && activeShape.points.length > 0,
+    ),
+    canClose: Boolean(
+      activeShape && !activeShape.isClosed && activeShape.points.length >= 3,
+    ),
+    isEmpty: shapes.length === 0,
+    shapeCount: shapes.length,
     addPoint,
     undo,
     reset,
     closeShape,
+    newPolygon,
+    selectShape,
+    deleteActiveShape,
     setImportText,
     openImportPanel,
     cancelImport,

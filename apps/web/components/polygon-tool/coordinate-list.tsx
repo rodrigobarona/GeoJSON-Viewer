@@ -8,6 +8,7 @@ interface CoordinateListProps {
   compactJsonText: string
   geojsonText: string
   isEmpty: boolean
+  shapeLabel?: string
 }
 
 export function CoordinateList({
@@ -15,17 +16,25 @@ export function CoordinateList({
   compactJsonText,
   geojsonText,
   isEmpty,
+  shapeLabel,
 }: CoordinateListProps) {
   if (isEmpty) {
     return (
       <p className="text-muted-foreground text-sm leading-relaxed">
-        Click the map to add points. Use Close Shape to finish a polygon.
+        Click the map to draw a polygon, or use Import to add one. After closing
+        a shape, click New to start another polygon.
       </p>
     )
   }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
+      {shapeLabel ? (
+        <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+          {shapeLabel}
+        </p>
+      ) : null}
+
       <div className="min-h-0 flex-1">
         <p className="text-muted-foreground mb-2 text-xs font-medium tracking-wide uppercase">
           Points
