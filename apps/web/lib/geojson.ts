@@ -165,6 +165,7 @@ export function buildShapesOverlayData(shapes: Shape[], activeShapeId: string | 
           color,
           isActive,
           pointIndex,
+          draggable: isActive,
         },
         geometry: {
           type: "Point",

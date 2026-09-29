@@ -18,6 +18,11 @@ import {
   type LngLat,
 } from "@/lib/geojson"
 import {
+  findEdgeInsertionIndex,
+  insertPointAtIndex,
+  updatePointAtIndex,
+} from "@/lib/map-editing"
+import {
   closeShapeRecord,
   createShape,
   getShapeOrNull,
@@ -41,6 +46,8 @@ export interface PolygonToolState {
 
 export interface PolygonToolActions {
   addPoint: (point: LngLat) => void
+  moveVertex: (shapeId: string, pointIndex: number, point: LngLat) => void
+  finalizeVertexMove: (shapeId: string) => void
   undo: () => void
   reset: () => void
   closeShape: () => void
@@ -149,24 +156,101 @@ export function usePolygonTool(): PolygonToolState & PolygonToolActions {
     return nextShape.id
   }, [])
 
+  const applyShapePoints = useCallback(
+    (shape: Shape, points: LngLat[], keepClosed: boolean) => {
+      if (keepClosed && points.length >= 3) {
+        return closeShapeRecord({
+          ...shape,
+          points,
+        })
+      }
+
+      return {
+        ...shape,
+        points,
+        isClosed: false,
+        ringWasReversed: false,
+      }
+    },
+    [],
+  )
+
   const addPoint = useCallback(
     (point: LngLat) => {
-      if (!activeShape || activeShape.isClosed) {
+      if (!activeShape) {
         startDraftShape(point)
         return
       }
 
+      if (!activeShape.isClosed) {
+        setShapes((current) =>
+          updateShapeInList(
+            current,
+            applyShapePoints(activeShape, [...activeShape.points, point], false),
+          ),
+        )
+        return
+      }
+
+      const insertIndex = findEdgeInsertionIndex(
+        activeShape.points,
+        point,
+        true,
+      )
+      const nextPoints = insertPointAtIndex(
+        activeShape.points,
+        insertIndex,
+        point,
+      )
+
       setShapes((current) =>
-        updateShapeInList(current, {
-          ...activeShape,
-          points: [...activeShape.points, point],
-          isClosed: false,
-          ringWasReversed: false,
+        updateShapeInList(
+          current,
+          applyShapePoints(activeShape, nextPoints, true),
+        ),
+      )
+    },
+    [activeShape, applyShapePoints, startDraftShape],
+  )
+
+  const moveVertex = useCallback(
+    (shapeId: string, pointIndex: number, point: LngLat) => {
+      setShapes((current) =>
+        current.map((shape) => {
+          if (shape.id !== shapeId) {
+            return shape
+          }
+
+          const nextPoints = updatePointAtIndex(shape.points, pointIndex, point)
+          if (shape.isClosed) {
+            return {
+              ...shape,
+              points: nextPoints,
+            }
+          }
+
+          return {
+            ...shape,
+            points: nextPoints,
+            ringWasReversed: false,
+          }
         }),
       )
     },
-    [activeShape, startDraftShape],
+    [],
   )
+
+  const finalizeVertexMove = useCallback((shapeId: string) => {
+    setShapes((current) =>
+      current.map((shape) => {
+        if (shape.id !== shapeId || !shape.isClosed || shape.points.length < 3) {
+          return shape
+        }
+
+        return closeShapeRecord(shape)
+      }),
+    )
+  }, [])
 
   const undo = useCallback(() => {
     if (!activeShape || activeShape.isClosed || activeShape.points.length === 0) {
@@ -335,6 +419,8 @@ export function usePolygonTool(): PolygonToolState & PolygonToolActions {
     isEmpty: shapes.length === 0,
     shapeCount: shapes.length,
     addPoint,
+    moveVertex,
+    finalizeVertexMove,
     undo,
     reset,
     closeShape,

@@ -22,6 +22,8 @@ function PolygonToolContent() {
           activeShapeId={tool.activeShapeId}
           fitBoundsKey={tool.fitBoundsKey}
           onAddPoint={tool.addPoint}
+          onMoveVertex={tool.moveVertex}
+          onFinalizeVertexMove={tool.finalizeVertexMove}
         />
       </ResizablePanel>
       <ResizableHandle withHandle />
