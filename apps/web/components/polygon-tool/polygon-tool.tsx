@@ -15,8 +15,8 @@ function PolygonToolContent() {
   const tool = usePolygonTool()
 
   return (
-    <ResizablePanelGroup orientation="horizontal" className="h-full">
-      <ResizablePanel defaultSize={75} minSize={50}>
+    <ResizablePanelGroup orientation="horizontal" className="h-full w-full">
+      <ResizablePanel defaultSize="75" minSize="50" className="min-w-0">
         <MapView
           points={tool.points}
           isClosed={tool.isClosed}
@@ -24,7 +24,7 @@ function PolygonToolContent() {
         />
       </ResizablePanel>
       <ResizableHandle withHandle />
-      <ResizablePanel defaultSize={25} minSize={20} maxSize={35}>
+      <ResizablePanel defaultSize="25" minSize="20" maxSize="40" className="min-w-0">
         <PolygonSidebar {...tool} />
       </ResizablePanel>
     </ResizablePanelGroup>

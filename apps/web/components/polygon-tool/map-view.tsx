@@ -10,9 +10,8 @@ import {
 } from "maplibre-gl"
 import "maplibre-gl/dist/maplibre-gl.css"
 
-import { configureMapLibreWorker } from "@/lib/maplibre-setup"
-
 import { LayerSwitcher } from "@/components/polygon-tool/layer-switcher"
+import { configureMapLibreWorker } from "@/lib/maplibre-setup"
 import {
   DEFAULT_BASEMAP_ID,
   getBasemap,
@@ -25,6 +24,8 @@ import {
   getBounds,
   type LngLat,
 } from "@/lib/geojson"
+
+configureMapLibreWorker()
 
 const EMPTY_FEATURE_COLLECTION = {
   type: "FeatureCollection" as const,
@@ -207,8 +208,6 @@ export function MapView({ points, isClosed, onAddPoint }: MapViewProps) {
       return
     }
 
-    configureMapLibreWorker()
-
     const basemap = getBasemap(DEFAULT_BASEMAP_ID)
     const map = new Map({
       container: containerRef.current,
@@ -286,7 +285,7 @@ export function MapView({ points, isClosed, onAddPoint }: MapViewProps) {
   }, [basemapId])
 
   return (
-    <div className="relative h-full w-full">
+    <div className="relative h-full min-h-0 w-full min-w-0 overflow-hidden">
       <div ref={containerRef} className="h-full w-full" />
       <div className="absolute top-3 right-3 z-10">
         <LayerSwitcher value={basemapId} onChange={setBasemapId} />
