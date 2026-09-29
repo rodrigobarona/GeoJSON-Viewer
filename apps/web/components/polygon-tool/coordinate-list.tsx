@@ -1,6 +1,6 @@
 "use client"
 
-import { RiFileCopyLine } from "@remixicon/react"
+import { RiDownloadLine, RiFileCopyLine } from "@remixicon/react"
 import { toast } from "sonner"
 
 import { Button } from "@workspace/ui/components/button"
@@ -24,28 +24,60 @@ async function copyText(text: string, label: string) {
   }
 }
 
+function downloadJsonFile(text: string) {
+  try {
+    const blob = new Blob([text], { type: "application/geo+json" })
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement("a")
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")
+    anchor.href = url
+    anchor.download = `polygon-${stamp}.geojson`
+    anchor.click()
+    URL.revokeObjectURL(url)
+    toast.success("GeoJSON file downloaded.")
+  } catch {
+    toast.error("Could not download JSON file.")
+  }
+}
+
 function SectionHeader({
   title,
   onCopy,
+  onDownload,
 }: {
   title: string
   onCopy: () => void
+  onDownload?: () => void
 }) {
   return (
     <div className="mb-2 flex items-center justify-between gap-2">
       <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
         {title}
       </p>
-      <Button
-        type="button"
-        variant="ghost"
-        size="xs"
-        onClick={onCopy}
-        aria-label={`Copy ${title}`}
-      >
-        <RiFileCopyLine />
-        Copy
-      </Button>
+      <div className="flex items-center gap-1">
+        {onDownload ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            onClick={onDownload}
+            aria-label={`Download ${title}`}
+          >
+            <RiDownloadLine />
+            Download
+          </Button>
+        ) : null}
+        <Button
+          type="button"
+          variant="ghost"
+          size="xs"
+          onClick={onCopy}
+          aria-label={`Copy ${title}`}
+        >
+          <RiFileCopyLine />
+          Copy
+        </Button>
+      </div>
     </div>
   )
 }
@@ -67,7 +99,9 @@ export function CoordinateList({
     )
   }
 
+  // Prefer full GeoJSON for downloads; fall back to compact panel text.
   const jsonText = compactJsonText || geojsonText
+  const downloadText = geojsonText || compactJsonText
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
@@ -95,6 +129,7 @@ export function CoordinateList({
         <SectionHeader
           title="JSON"
           onCopy={() => void copyText(jsonText, "JSON")}
+          onDownload={() => downloadJsonFile(downloadText)}
         />
         <ScrollArea className="h-48 rounded-lg border bg-muted/30 p-3">
           <pre className="font-mono text-xs leading-relaxed whitespace-pre-wrap">
