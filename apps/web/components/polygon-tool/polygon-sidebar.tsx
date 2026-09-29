@@ -1,5 +1,6 @@
 "use client"
 
+import type { ComponentProps, ReactNode } from "react"
 import {
   RiAddLine,
   RiArrowGoBackLine,
@@ -17,8 +18,13 @@ import type {
   PolygonToolState,
 } from "@/hooks/use-polygon-tool"
 import { getShapeColor } from "@/lib/geojson"
+import { CREATOR_NAME, CREATOR_X_URL, GITHUB_REPO_URL } from "@/lib/site"
 import { Badge } from "@workspace/ui/components/badge"
 import { Button } from "@workspace/ui/components/button"
+import {
+  ButtonGroup,
+  ButtonGroupSeparator,
+} from "@workspace/ui/components/button-group"
 import { ScrollArea } from "@workspace/ui/components/scroll-area"
 import { Textarea } from "@workspace/ui/components/textarea"
 import {
@@ -28,6 +34,33 @@ import {
 } from "@workspace/ui/components/tooltip"
 
 type PolygonSidebarProps = PolygonToolState & PolygonToolActions
+
+type ActionButtonProps = {
+  tooltip: string
+  label: string
+  children: ReactNode
+} & ComponentProps<typeof Button>
+
+function ActionButton({
+  tooltip,
+  label,
+  children,
+  className,
+  ...buttonProps
+}: ActionButtonProps) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button aria-label={label} className={className} {...buttonProps} />
+        }
+      >
+        {children}
+      </TooltipTrigger>
+      <TooltipContent>{tooltip}</TooltipContent>
+    </Tooltip>
+  )
+}
 
 export function PolygonSidebar({
   shapes,
@@ -86,98 +119,84 @@ export function PolygonSidebar({
         </Tooltip>
       </div>
 
-      <div className="flex flex-wrap gap-2 border-b px-4 py-3">
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                variant={showImportPanel ? "default" : "outline"}
-                size="sm"
-                onClick={openImportPanel}
-              />
-            }
+      <div className="space-y-2.5 border-b px-4 py-3">
+        <div className="flex gap-2">
+          <ActionButton
+            tooltip="Add polygon from pasted coordinates"
+            label="Import"
+            variant={showImportPanel ? "default" : "outline"}
+            size="sm"
+            className="flex-1"
+            onClick={openImportPanel}
           >
             <RiDownloadLine />
             Import
-          </TooltipTrigger>
-          <TooltipContent>Add polygon from pasted coordinates</TooltipContent>
-        </Tooltip>
+          </ActionButton>
 
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button variant="outline" size="sm" onClick={newPolygon} />
-            }
+          <ActionButton
+            tooltip="Start a new polygon"
+            label="New"
+            variant="outline"
+            size="sm"
+            className="flex-1"
+            onClick={newPolygon}
           >
             <RiAddLine />
             New
-          </TooltipTrigger>
-          <TooltipContent>Start a new polygon</TooltipContent>
-        </Tooltip>
+          </ActionButton>
+        </div>
 
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button variant="outline" size="sm" onClick={reset} />
-            }
-          >
-            <RiRestartLine />
-            Reset
-          </TooltipTrigger>
-          <TooltipContent>Clear all polygons</TooltipContent>
-        </Tooltip>
-
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={undo}
-                disabled={!canUndo}
-              />
-            }
+        <ButtonGroup className="w-full">
+          <ActionButton
+            tooltip="Remove the last point"
+            label="Undo"
+            variant="outline"
+            size="icon-sm"
+            className="flex-1"
+            onClick={undo}
+            disabled={!canUndo}
           >
             <RiArrowGoBackLine />
-            Undo
-          </TooltipTrigger>
-          <TooltipContent>Remove the last point</TooltipContent>
-        </Tooltip>
+          </ActionButton>
 
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={closeShape}
-                disabled={!canClose}
-              />
-            }
+          <ActionButton
+            tooltip="Finish the active polygon"
+            label="Close Shape"
+            variant="outline"
+            size="icon-sm"
+            className="flex-1"
+            onClick={closeShape}
+            disabled={!canClose}
           >
             <RiCloseCircleLine />
-            Close Shape
-          </TooltipTrigger>
-          <TooltipContent>Finish the active polygon</TooltipContent>
-        </Tooltip>
+          </ActionButton>
 
-        {activeShape ? (
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={deleteActiveShape}
-                />
-              }
+          <ButtonGroupSeparator />
+
+          <ActionButton
+            tooltip="Clear all polygons"
+            label="Reset"
+            variant="outline"
+            size="icon-sm"
+            className="flex-1"
+            onClick={reset}
+          >
+            <RiRestartLine />
+          </ActionButton>
+
+          {activeShape ? (
+            <ActionButton
+              tooltip="Delete the active polygon"
+              label="Delete"
+              variant="destructive"
+              size="icon-sm"
+              className="flex-1"
+              onClick={deleteActiveShape}
             >
               <RiDeleteBinLine />
-              Delete
-            </TooltipTrigger>
-            <TooltipContent>Delete the active polygon</TooltipContent>
-          </Tooltip>
-        ) : null}
+            </ActionButton>
+          ) : null}
+        </ButtonGroup>
       </div>
 
       <ScrollArea className="min-h-0 flex-1">
@@ -263,6 +282,29 @@ export function PolygonSidebar({
           )}
         </div>
       </ScrollArea>
+
+      <footer className="text-muted-foreground shrink-0 border-t px-4 py-3 text-xs leading-relaxed">
+        <a
+          href={GITHUB_REPO_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="hover:text-foreground underline-offset-4 hover:underline"
+        >
+          Open source on GitHub
+        </a>
+        <span aria-hidden="true"> · </span>
+        <span>
+          by{" "}
+          <a
+            href={CREATOR_X_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-foreground underline-offset-4 hover:underline"
+          >
+            Rodrigo Barona
+          </a>
+        </span>
+      </footer>
     </aside>
   )
 }

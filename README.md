@@ -354,6 +354,7 @@ This project is **open source and free to use**. Fork it, self-host it, or contr
 
 - **Live demo:** [geojson-polygon-builder.vercel.app](https://geojson-polygon-builder.vercel.app/)
 - **Source code:** [github.com/rodrigobarona/GeoJSON-Viewer](https://github.com/rodrigobarona/GeoJSON-Viewer)
+- **Author:** [Rodrigo Barona](https://x.com/rbarona)
 - **Inspiration:** [Keene State College Map Polygon/Polyline Tool](https://www.keene.edu/campus/maps/tool/)
 
 ---
