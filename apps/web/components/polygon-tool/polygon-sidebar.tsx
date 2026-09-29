@@ -224,16 +224,16 @@ export function PolygonSidebar({
                 value={importText}
                 onChange={(event) => setImportText(event.target.value)}
                 placeholder={"-72.2839987, 42.9276063\n-72.2842133, 42.9272135"}
-                className="min-h-48 font-mono text-xs"
+                className="field-sizing-fixed min-h-32 max-h-40 resize-none overflow-y-auto font-mono text-xs"
                 autoFocus
               />
-              <p className="text-muted-foreground text-xs leading-relaxed">
+              <p className="text-muted-foreground shrink-0 text-xs leading-relaxed">
                 Paste one point per line as{" "}
                 <span className="font-mono">lng, lat</span>, GeoJSON, or a
                 FeatureCollection with multiple polygons. Shapes with 3+ points
                 are closed automatically.
               </p>
-              <div className="flex gap-2">
+              <div className="flex shrink-0 gap-2">
                 <Button size="sm" onClick={importFromText}>
                   <RiDownloadLine />
                   Import
