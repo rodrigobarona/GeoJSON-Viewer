@@ -22,6 +22,8 @@ export interface PolygonToolState {
   isClosed: boolean
   ringWasReversed: boolean
   importText: string
+  showImportPanel: boolean
+  fitBoundsKey: number
   lineListText: string
   geojsonText: string
   compactJsonText: string
@@ -36,6 +38,8 @@ export interface PolygonToolActions {
   reset: () => void
   closeShape: () => void
   setImportText: (value: string) => void
+  openImportPanel: () => void
+  cancelImport: () => void
   importFromText: () => void
   shareLink: () => Promise<void>
 }
@@ -97,6 +101,10 @@ export function usePolygonTool(): PolygonToolState & PolygonToolActions {
     initialState.ringWasReversed,
   )
   const [importText, setImportText] = useState(initialState.importText)
+  const [showImportPanel, setShowImportPanel] = useState(false)
+  const [fitBoundsKey, setFitBoundsKey] = useState(
+    initialState.points.length > 0 ? 1 : 0,
+  )
 
   const lineListText = useMemo(
     () => formatCoordinatesLineByLine(points),
@@ -149,6 +157,7 @@ export function usePolygonTool(): PolygonToolState & PolygonToolActions {
     setIsClosed(false)
     setRingWasReversed(false)
     setImportText("")
+    setShowImportPanel(false)
   }, [])
 
   const closeShape = useCallback(() => {
@@ -161,14 +170,30 @@ export function usePolygonTool(): PolygonToolState & PolygonToolActions {
     setIsClosed(true)
   }, [points])
 
+  const openImportPanel = useCallback(() => {
+    setImportText((current) =>
+      current.trim() ? current : formatCoordinatesLineByLine(points),
+    )
+    setShowImportPanel(true)
+  }, [points])
+
+  const cancelImport = useCallback(() => {
+    setShowImportPanel(false)
+    setImportText(formatCoordinatesLineByLine(points))
+  }, [points])
+
   const importFromText = useCallback(() => {
     try {
       const parsed = parseCoordinatesFromText(importText)
-      setPoints(parsed.points)
-      setIsClosed(parsed.isClosed)
-      setImportText(formatCoordinatesLineByLine(parsed.points))
+      const shouldClose = parsed.isClosed || parsed.points.length >= 3
 
-      if (parsed.isClosed) {
+      setPoints(parsed.points)
+      setIsClosed(shouldClose)
+      setImportText(formatCoordinatesLineByLine(parsed.points))
+      setShowImportPanel(false)
+      setFitBoundsKey((current) => current + 1)
+
+      if (shouldClose) {
         const output = buildPolygonOutput(parsed.points)
         setRingWasReversed(output.ringWasReversed)
       } else {
@@ -210,6 +235,8 @@ export function usePolygonTool(): PolygonToolState & PolygonToolActions {
     isClosed,
     ringWasReversed,
     importText,
+    showImportPanel,
+    fitBoundsKey,
     lineListText,
     geojsonText,
     compactJsonText,
@@ -221,6 +248,8 @@ export function usePolygonTool(): PolygonToolState & PolygonToolActions {
     reset,
     closeShape,
     setImportText,
+    openImportPanel,
+    cancelImport,
     importFromText,
     shareLink,
   }

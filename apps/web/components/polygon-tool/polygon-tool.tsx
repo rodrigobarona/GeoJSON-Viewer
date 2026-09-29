@@ -20,6 +20,7 @@ function PolygonToolContent() {
         <MapView
           points={tool.points}
           isClosed={tool.isClosed}
+          fitBoundsKey={tool.fitBoundsKey}
           onAddPoint={tool.addPoint}
         />
       </ResizablePanel>

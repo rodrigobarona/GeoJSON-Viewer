@@ -48,6 +48,7 @@ const LAYER_IDS = {
 interface MapViewProps {
   points: LngLat[]
   isClosed: boolean
+  fitBoundsKey: number
   onAddPoint: (point: LngLat) => void
 }
 
@@ -185,7 +186,12 @@ function fitMapToPoints(map: Map, points: LngLat[]) {
   })
 }
 
-export function MapView({ points, isClosed, onAddPoint }: MapViewProps) {
+export function MapView({
+  points,
+  isClosed,
+  fitBoundsKey,
+  onAddPoint,
+}: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<Map | null>(null)
   const previousPointCountRef = useRef(0)
@@ -261,6 +267,15 @@ export function MapView({ points, isClosed, onAddPoint }: MapViewProps) {
     }
     previousPointCountRef.current = points.length
   }, [isClosed, mapReady, points])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !mapReady || fitBoundsKey === 0 || points.length === 0) {
+      return
+    }
+
+    fitMapToPoints(map, points)
+  }, [fitBoundsKey, mapReady, points])
 
   useEffect(() => {
     if (!basemapInitializedRef.current) {
