@@ -16,11 +16,7 @@ import "maplibre-gl/dist/maplibre-gl.css"
 
 import { LayerSwitcher } from "@/components/polygon-tool/layer-switcher"
 import { configureMapLibreWorker } from "@/lib/maplibre-setup"
-import {
-  DEFAULT_BASEMAP_ID,
-  getBasemap,
-  type BasemapId,
-} from "@/lib/basemaps"
+import { getBasemap, type BasemapId } from "@/lib/basemaps"
 import {
   buildShapesOverlayData,
   getBoundsForShapes,
@@ -70,7 +66,9 @@ interface MapInteractionState {
 interface MapViewProps {
   shapes: Shape[]
   activeShapeId: string | null
+  basemapId: BasemapId
   fitBoundsKey: number
+  onBasemapChange: (value: BasemapId) => void
   onAddPoint: (point: LngLat) => void
   onMoveVertex: (shapeId: string, pointIndex: number, point: LngLat) => void
   onFinalizeVertexMove: (shapeId: string) => void
@@ -144,13 +142,28 @@ function addOverlayLayers(map: Map) {
       paint: {
         "circle-color": ["get", "color"],
         "circle-radius": [
-          "case",
-          ["boolean", ["get", "draggable"], false],
-          10,
+          "interpolate",
+          ["linear"],
+          ["zoom"],
           5,
+          ["case", ["boolean", ["get", "draggable"], false], 3, 2],
+          10,
+          ["case", ["boolean", ["get", "draggable"], false], 5, 3],
+          14,
+          ["case", ["boolean", ["get", "draggable"], false], 8, 4.5],
+          18,
+          ["case", ["boolean", ["get", "draggable"], false], 10, 5],
         ],
         "circle-stroke-color": "#ffffff",
-        "circle-stroke-width": 2,
+        "circle-stroke-width": [
+          "interpolate",
+          ["linear"],
+          ["zoom"],
+          5,
+          1,
+          14,
+          2,
+        ],
       },
     })
   }
@@ -193,15 +206,31 @@ function updateOverlayData(
   setVisibility(LAYER_IDS.points, overlay.points.features.length > 0)
 }
 
-function fitMapToShapes(map: Map, shapes: Shape[]) {
+function fitMapToShapes(map: Map, shapes: Shape[], options?: { maxZoom?: number }) {
   const bounds = getBoundsForShapes(shapes)
   if (!bounds) {
     return
   }
 
+  const [[minLng, minLat], [maxLng, maxLat]] = bounds
+  const isSinglePoint = minLng === maxLng && minLat === maxLat
+
+  if (isSinglePoint) {
+    // Keep current zoom when the first point is already on screen.
+    if (map.getBounds().contains([minLng, minLat])) {
+      return
+    }
+
+    map.easeTo({
+      center: [minLng, minLat],
+      duration: 600,
+    })
+    return
+  }
+
   map.fitBounds(bounds, {
     padding: 80,
-    maxZoom: 16,
+    maxZoom: options?.maxZoom ?? 16,
     duration: 600,
   })
 }
@@ -420,14 +449,18 @@ function bindMapInteractions(
 export function MapView({
   shapes,
   activeShapeId,
+  basemapId,
   fitBoundsKey,
+  onBasemapChange,
   onAddPoint,
   onMoveVertex,
   onFinalizeVertexMove,
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<Map | null>(null)
-  const previousShapeCountRef = useRef(0)
+  const previousPointCountRef = useRef(0)
+  const previousFitBoundsKeyRef = useRef(0)
+  const allowAutoFitRef = useRef(true)
   const basemapInitializedRef = useRef(false)
   const onAddPointRef = useRef(onAddPoint)
   const onMoveVertexRef = useRef(onMoveVertex)
@@ -441,7 +474,6 @@ export function MapView({
     touchStartPoint: null,
     touchMoved: false,
   })
-  const [basemapId, setBasemapId] = useState<BasemapId>(DEFAULT_BASEMAP_ID)
   const [mapReady, setMapReady] = useState(false)
 
   useEffect(() => {
@@ -459,7 +491,7 @@ export function MapView({
 
     isTouchDeviceRef.current = isCoarsePointerDevice()
 
-    const basemap = getBasemap(DEFAULT_BASEMAP_ID)
+    const basemap = getBasemap(basemapId)
     const map = new Map({
       container: containerRef.current,
       style: basemap.style as string | StyleSpecification,
@@ -485,6 +517,14 @@ export function MapView({
 
     bindMapInteractions(map, interactionRefs, interactionStateRef.current)
 
+    // Once the user changes zoom (wheel, pinch, or nav controls), keep their view.
+    const lockAutoFitOnUserZoom = (event: { originalEvent?: Event }) => {
+      if (event.originalEvent) {
+        allowAutoFitRef.current = false
+      }
+    }
+    map.on("zoomstart", lockAutoFitOnUserZoom)
+
     map.on("load", () => {
       setupOverlay(map)
       setMapReady(true)
@@ -493,6 +533,7 @@ export function MapView({
     mapRef.current = map
 
     return () => {
+      map.off("zoomstart", lockAutoFitOnUserZoom)
       map.remove()
       mapRef.current = null
       setMapReady(false)
@@ -508,21 +549,40 @@ export function MapView({
     setupOverlay(map)
     updateOverlayData(map, shapes, activeShapeId)
 
-    const previousCount = previousShapeCountRef.current
-    if (shapes.length > 0 && (previousCount === 0 || shapes.length > previousCount)) {
+    const pointCount = shapes.reduce((total, shape) => total + shape.points.length, 0)
+    const previousPointCount = previousPointCountRef.current
+
+    // Auto-fit once when the first point appears, until the user zooms manually.
+    if (allowAutoFitRef.current && previousPointCount === 0 && pointCount > 0) {
       fitMapToShapes(map, shapes)
     }
-    previousShapeCountRef.current = shapes.length
+
+    if (pointCount === 0) {
+      allowAutoFitRef.current = true
+    }
+
+    previousPointCountRef.current = pointCount
   }, [activeShapeId, mapReady, shapes])
 
   useEffect(() => {
     const map = mapRef.current
-    if (!map || !mapReady || fitBoundsKey === 0 || shapes.length === 0) {
+    if (!map || !mapReady || fitBoundsKey === 0) {
       return
     }
 
-    fitMapToShapes(map, shapes)
-  }, [fitBoundsKey, mapReady, shapes])
+    // Only react to an explicit fit request (import / shared URL), not every shape edit.
+    if (fitBoundsKey === previousFitBoundsKeyRef.current) {
+      return
+    }
+    previousFitBoundsKeyRef.current = fitBoundsKey
+
+    if (shapesRef.current.length === 0) {
+      return
+    }
+
+    allowAutoFitRef.current = true
+    fitMapToShapes(map, shapesRef.current)
+  }, [fitBoundsKey, mapReady])
 
   useEffect(() => {
     if (!basemapInitializedRef.current) {
@@ -546,8 +606,10 @@ export function MapView({
       )
     }
 
-    map.setStyle(basemap.style as string | StyleSpecification)
+    // Attach before setStyle — inline styles (satellite) can finish loading
+    // during setStyle and would miss a listener registered afterward.
     map.once("style.load", restoreOverlay)
+    map.setStyle(basemap.style as string | StyleSpecification)
   }, [basemapId])
 
   const helperText = isCoarsePointerDevice()
@@ -558,7 +620,7 @@ export function MapView({
     <div className="relative h-full min-h-0 w-full min-w-0 overflow-hidden">
       <div ref={containerRef} className="h-full w-full" />
       <div className="absolute top-3 right-3 z-10">
-        <LayerSwitcher value={basemapId} onChange={setBasemapId} />
+        <LayerSwitcher value={basemapId} onChange={onBasemapChange} />
       </div>
       <div className="bg-background/95 text-foreground pointer-events-none absolute bottom-4 left-1/2 z-10 max-w-md -translate-x-1/2 rounded-lg border px-3 py-2 text-center text-xs shadow-sm">
         {helperText}

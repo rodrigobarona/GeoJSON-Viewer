@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState } from "react"
 import { useSearchParams } from "next/navigation"
 import { toast } from "sonner"
 
+import { parseBasemapId, type BasemapId } from "@/lib/basemaps"
 import {
   CoordinateParseError,
   formatCoordinatesLineByLine,
@@ -32,6 +33,7 @@ import {
 export interface PolygonToolState {
   shapes: Shape[]
   activeShapeId: string | null
+  basemapId: BasemapId
   importText: string
   showImportPanel: boolean
   fitBoundsKey: number
@@ -54,6 +56,7 @@ export interface PolygonToolActions {
   newPolygon: () => void
   selectShape: (shapeId: string) => void
   deleteActiveShape: () => void
+  setBasemapId: (value: BasemapId) => void
   setImportText: (value: string) => void
   openImportPanel: () => void
   cancelImport: () => void
@@ -78,6 +81,7 @@ function getInitialStateFromUrl(searchParams: URLSearchParams) {
   return {
     shapes,
     activeShapeId: activeShape?.id ?? null,
+    basemapId: parseBasemapId(searchParams.get("basemap")),
     importText: activeShape
       ? formatCoordinatesLineByLine(activeShape.points)
       : "",
@@ -95,6 +99,7 @@ export function usePolygonTool(): PolygonToolState & PolygonToolActions {
   const [activeShapeId, setActiveShapeId] = useState<string | null>(
     initialState.activeShapeId,
   )
+  const [basemapId, setBasemapId] = useState<BasemapId>(initialState.basemapId)
   const [importText, setImportText] = useState(initialState.importText)
   const [showImportPanel, setShowImportPanel] = useState(false)
   const [fitBoundsKey, setFitBoundsKey] = useState(
@@ -391,6 +396,7 @@ export function usePolygonTool(): PolygonToolState & PolygonToolActions {
 
     const url = new URL(window.location.href)
     url.searchParams.set("coords", serializeShapesToUrl(shapes))
+    url.searchParams.set("basemap", basemapId)
     window.history.replaceState({}, "", url.toString())
 
     try {
@@ -399,11 +405,12 @@ export function usePolygonTool(): PolygonToolState & PolygonToolActions {
     } catch {
       toast.error("Could not copy link. Copy the URL from the address bar.")
     }
-  }, [shapes])
+  }, [basemapId, shapes])
 
   return {
     shapes,
     activeShapeId,
+    basemapId,
     importText,
     showImportPanel,
     fitBoundsKey,
@@ -427,6 +434,7 @@ export function usePolygonTool(): PolygonToolState & PolygonToolActions {
     newPolygon,
     selectShape,
     deleteActiveShape,
+    setBasemapId,
     setImportText,
     openImportPanel,
     cancelImport,

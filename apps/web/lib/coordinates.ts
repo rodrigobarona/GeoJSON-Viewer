@@ -47,6 +47,43 @@ function parseLineByLine(text: string): LngLat[] {
   return lines.map(parsePair)
 }
 
+function isLngLatPair(value: unknown): value is LngLat {
+  return (
+    Array.isArray(value) &&
+    value.length >= 2 &&
+    typeof value[0] === "number" &&
+    typeof value[1] === "number" &&
+    Number.isFinite(value[0]) &&
+    Number.isFinite(value[1])
+  )
+}
+
+function parseCoordinateArray(value: unknown): ParsedShapeImport | null {
+  if (!Array.isArray(value) || value.length === 0) {
+    return null
+  }
+
+  // Polygon coordinates: [[[lng, lat], ...], ...]
+  if (Array.isArray(value[0]) && isLngLatPair(value[0][0])) {
+    const ring = value[0] as LngLat[]
+    return {
+      points: normalizeRing(ring),
+      isClosed: ring.length >= 3,
+    }
+  }
+
+  // LineString / flat ring: [[lng, lat], ...]
+  if (isLngLatPair(value[0])) {
+    const points = value as LngLat[]
+    return {
+      points: normalizeRing(points),
+      isClosed: points.length >= 3,
+    }
+  }
+
+  return null
+}
+
 function extractShapesFromGeoJson(value: unknown): ParsedShapeImport[] {
   if (!value || typeof value !== "object") {
     throw new CoordinateParseError("Invalid GeoJSON.")
@@ -66,13 +103,21 @@ function extractShapesFromGeoJson(value: unknown): ParsedShapeImport[] {
   }
 
   const single = parseGeoJsonShape(value)
-  if (!single) {
-    throw new CoordinateParseError(
-      "Unsupported GeoJSON type. Use Polygon, LineString, or Feature.",
-    )
+  if (single) {
+    return [single]
   }
 
-  return [single]
+  // Compact export from this app: { "coordinates": [...] } without a type
+  if ("coordinates" in data && !("type" in data)) {
+    const fromCoordinates = parseCoordinateArray(data.coordinates)
+    if (fromCoordinates) {
+      return [fromCoordinates]
+    }
+  }
+
+  throw new CoordinateParseError(
+    "Unsupported GeoJSON type. Use Polygon, LineString, Feature, or { coordinates }.",
+  )
 }
 
 function parseGeoJsonShape(value: unknown): ParsedShapeImport | null {
@@ -158,17 +203,9 @@ export function parseMultipleCoordinatesFromText(
     try {
       const parsed = JSON.parse(trimmed) as unknown
       if (Array.isArray(parsed)) {
-        if (
-          parsed.length > 0 &&
-          Array.isArray(parsed[0]) &&
-          typeof parsed[0][0] === "number"
-        ) {
-          return [
-            {
-              points: normalizeRing(parsed as LngLat[]),
-              isClosed: parsed.length >= 3,
-            },
-          ]
+        const fromArray = parseCoordinateArray(parsed)
+        if (fromArray) {
+          return [fromArray]
         }
         throw new CoordinateParseError("Unsupported JSON array format.")
       }
@@ -204,15 +241,9 @@ export function parseCoordinatesFromText(text: string): ParsedCoordinates {
     try {
       const parsed = JSON.parse(trimmed) as unknown
       if (Array.isArray(parsed)) {
-        if (
-          parsed.length > 0 &&
-          Array.isArray(parsed[0]) &&
-          typeof parsed[0][0] === "number"
-        ) {
-          return {
-            points: normalizeRing(parsed as LngLat[]),
-            isClosed: false,
-          }
+        const fromArray = parseCoordinateArray(parsed)
+        if (fromArray) {
+          return fromArray
         }
         throw new CoordinateParseError("Unsupported JSON array format.")
       }

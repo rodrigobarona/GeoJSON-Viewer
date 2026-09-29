@@ -61,6 +61,19 @@ export const BASEMAPS: BasemapConfig[] = [
 
 export const DEFAULT_BASEMAP_ID: BasemapId = "bright"
 
+export function isBasemapId(value: string | null | undefined): value is BasemapId {
+  return (
+    value === "bright" ||
+    value === "liberty" ||
+    value === "dark" ||
+    value === "satellite"
+  )
+}
+
+export function parseBasemapId(value: string | null | undefined): BasemapId {
+  return isBasemapId(value) ? value : DEFAULT_BASEMAP_ID
+}
+
 export function getBasemap(id: BasemapId): BasemapConfig {
   const basemap = BASEMAPS.find((entry) => entry.id === id)
   if (!basemap) {

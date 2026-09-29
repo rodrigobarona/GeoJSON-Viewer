@@ -20,7 +20,9 @@ function PolygonToolContent() {
         <MapView
           shapes={tool.shapes}
           activeShapeId={tool.activeShapeId}
+          basemapId={tool.basemapId}
           fitBoundsKey={tool.fitBoundsKey}
+          onBasemapChange={tool.setBasemapId}
           onAddPoint={tool.addPoint}
           onMoveVertex={tool.moveVertex}
           onFinalizeVertexMove={tool.finalizeVertexMove}

@@ -4,10 +4,10 @@ import type { ComponentProps, ReactNode } from "react"
 import {
   RiAddLine,
   RiArrowGoBackLine,
-  RiCloseCircleLine,
   RiCloseLine,
   RiDeleteBinLine,
   RiDownloadLine,
+  RiHexagonLine,
   RiLink,
   RiRestartLine,
 } from "@remixicon/react"
@@ -160,7 +160,7 @@ export function PolygonSidebar({
           </ActionButton>
 
           <ActionButton
-            tooltip="Finish the active polygon"
+            tooltip="Close the active polygon"
             label="Close Shape"
             variant="outline"
             size="icon-sm"
@@ -168,7 +168,7 @@ export function PolygonSidebar({
             onClick={closeShape}
             disabled={!canClose}
           >
-            <RiCloseCircleLine />
+            <RiHexagonLine />
           </ActionButton>
 
           <ButtonGroupSeparator />
@@ -248,9 +248,10 @@ export function PolygonSidebar({
               />
               <p className="text-muted-foreground shrink-0 text-xs leading-relaxed">
                 Paste one point per line as{" "}
-                <span className="font-mono">lng, lat</span>, GeoJSON, or a
-                FeatureCollection with multiple polygons. Shapes with 3+ points
-                are closed automatically.
+                <span className="font-mono">lng, lat</span>, GeoJSON (Polygon,
+                LineString, Feature, FeatureCollection), or{" "}
+                <span className="font-mono">{`{ "coordinates": [...] }`}</span>.
+                Shapes with 3+ points are closed automatically.
               </p>
               <div className="flex shrink-0 gap-2">
                 <Button size="sm" onClick={importFromText}>
