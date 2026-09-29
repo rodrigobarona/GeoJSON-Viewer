@@ -1,0 +1,46 @@
+"use client"
+
+import { Suspense } from "react"
+
+import { MapView } from "@/components/polygon-tool/map-view"
+import { PolygonSidebar } from "@/components/polygon-tool/polygon-sidebar"
+import { usePolygonTool } from "@/hooks/use-polygon-tool"
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from "@workspace/ui/components/resizable"
+
+function PolygonToolContent() {
+  const tool = usePolygonTool()
+
+  return (
+    <ResizablePanelGroup orientation="horizontal" className="h-full">
+      <ResizablePanel defaultSize={75} minSize={50}>
+        <MapView
+          points={tool.points}
+          isClosed={tool.isClosed}
+          onAddPoint={tool.addPoint}
+        />
+      </ResizablePanel>
+      <ResizableHandle withHandle />
+      <ResizablePanel defaultSize={25} minSize={20} maxSize={35}>
+        <PolygonSidebar {...tool} />
+      </ResizablePanel>
+    </ResizablePanelGroup>
+  )
+}
+
+export function PolygonTool() {
+  return (
+    <Suspense
+      fallback={
+        <div className="text-muted-foreground flex h-full items-center justify-center text-sm">
+          Loading map…
+        </div>
+      }
+    >
+      <PolygonToolContent />
+    </Suspense>
+  )
+}
